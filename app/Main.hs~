@@ -1,0 +1,282 @@
+module Main where
+
+import Graphics.Gloss
+import Lib
+import Graphics.Gloss.Data.ViewPort
+import Graphics.Gloss.Interface.Pure.Game
+
+width, height, offset :: Int
+width = 300
+height = 300
+offset = 100
+
+data Game = Init
+ { ballPos :: (Float, Float)
+ ,ballVel :: (Float, Float) 
+ ,playerx :: Float  
+ ,lives::Int
+ ,pressKey :: Bool    
+ } deriving Show
+
+data Level = InitLevel
+ { boxPos :: (Float,Float)
+ , level :: Int
+ } deriving Show
+
+
+initialState :: Game
+initialState = Init
+  { ballPos = ( 0, 0 )
+  , ballVel = (25, -50)
+  , playerx = 0
+  , lives = 10
+  , pressKey = False
+  }
+
+window :: Display
+window = InWindow "Nice Window" (width, height) (offset, offset)
+
+background :: Color
+background = black
+
+playerHeight :: Float
+playerHeight = -120
+
+paddleHeight :: Float
+paddleHeight = 10
+
+paddleWidth :: Float
+paddleWidth = 50
+
+mapColor :: Int -> Color
+mapColor level = 
+  case level of
+    0 -> blue
+    1 -> green
+    2 -> chartreuse
+    3 -> yellow
+    4 -> orange
+    5 -> red
+    _ -> white
+
+mapPoint :: Int -> Int
+mapPoint level = 
+  case level of
+    0 -> 1
+    1 -> 1
+    2 -> 4 
+    3 -> 4
+    4 -> 7
+    5 -> 10
+    _ -> 0
+
+countBox :: [Level] -> Int
+countBox listBoxes = 
+  case listBoxes of
+    [] -> 1
+    el : li -> countBox li
+
+-- | Draw a game state (convert it to a picture).
+render :: Game -> Picture
+render game = 
+  pictures [ball, walls, boxes,
+            mkPaddle orange (playerx game) playerHeight]
+  where
+    --  The ball.
+    ball = uncurry translate (ballPos game) $ color ballColor $ circleSolid 10
+    ballColor = dark red
+    -- boxes
+    boxes :: Picture
+    boxes = pictures
+      [ translate (-150) 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      , translate (-120) 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate (-90) 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate (-60) 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate (-30) 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate 0 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate 30 125 $ color (mapColor 5) $ rectangleSolid 30 15      
+      ,translate 60 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate 90 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate 120 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate 150 125 $ color (mapColor 5) $ rectangleSolid 30 15
+      ,translate (-125) 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      , translate (-100) 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate (-75) 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate (-50) 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate (-25) 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate 0 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate 25 110 $ color (mapColor 4) $ rectangleSolid 30 15      
+      ,translate 50 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate 75 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate 100 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate 125 110 $ color (mapColor 4) $ rectangleSolid 30 15
+      ,translate (-125) 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate (-100) 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate (-75) 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate (-50) 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate (-25) 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate 0 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate 25 95 $ color (mapColor 3) $ rectangleSolid 30 15      
+      ,translate 50 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate 75 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate 100 95 $ color (mapColor 3) $ rectangleSolid 30 15
+      ,translate 125 95 $ color (mapColor 3) $ rectangleSolid 30 15]
+
+    --  The bottom and top walls.
+    wallV :: Float -> Picture
+    wallV offset =
+      translate 0 offset $
+        color wallColor $
+          rectangleSolid 270 10
+    --  The left and right walls.
+    wallH :: Float -> Picture
+    wallH offset =
+      translate offset 0 $
+        color wallColor $
+          rectangleSolid 10 270
+
+    wallColor = greyN 0.5
+    walls = pictures [wallV 150, wallV (-150), wallH 150, wallH (-150)] 
+  
+    --  Make a paddle of a given border and vertical offset.
+    mkPaddle :: Color -> Float -> Float -> Picture
+    mkPaddle col x y = pictures
+      [ translate x y $ color col $ rectangleSolid paddleWidth paddleHeight]
+
+    paddleColor = light (light blue)
+
+moveBall :: Float    -- ^ The number of seconds since last update
+         -> Game -- ^ The initial game state
+         -> Game -- ^ A new game state with an updated ball position
+moveBall seconds game = game { ballPos = (x',y') }
+  where
+    -- Old locations and velocities.
+    (x, y) = ballPos game
+    (vx, vy) = ballVel game
+
+    -- New locations.
+    x' = x + vx * seconds
+    y' = y + vy * seconds
+
+fps :: Int
+fps = 60
+
+type Radius = Float 
+type Position = (Float, Float)
+
+-- | Detect a collision with a paddle. Upon collisions,
+-- change the velocity of the ball to bounce it off the paddle.
+paddleBounce :: Game -> Game
+paddleBounce game = game { ballVel = (vx', vy') }
+  where
+    radius = 10
+
+    (vx,vy) = ballVel game
+    posx = playerx game
+    (vx',vy') = if paddleCollision (ballPos game) radius posx
+          then
+             (vx,-vy)
+           else
+            (vx,vy)
+
+paddleCollision :: Position -> Radius -> Float -> Bool 
+paddleCollision ( x , y) radius posx = padCollision
+  where
+    --posx = -fromIntegral posx
+    padCollision    = (y - radius <=  playerHeight + paddleHeight/2) && (x - radius >= -paddleWidth/2 + posx) && (x - radius <= posx + paddleWidth/2)
+
+-- | Detect a collision with one of the side walls. Upon collisions,
+-- update the velocity of the ball to bounce it off the wall.
+wallBounce :: Game -> Game
+wallBounce game = game { ballVel = (vx', vy') }
+  where
+    -- Radius. Use the same thing as in `render`.
+    radius = 10
+
+    -- The old velocities.
+    (vx, vy) = ballVel game
+
+    vy' = if wallCollisionV (ballPos game) radius
+          then
+             -- Update the velocity.  #perdeu jogo
+             -vy
+           else
+            -- Do nothing. Return the old velocity.
+            vy
+    vx' = if wallCollisionH (ballPos game) radius
+          then
+             -- Update the velocity.
+             -vx
+           else
+            -- Do nothing. Return the old velocity.
+            vx
+
+-- | Given position and radius of the ball, return whether a collision occurred.
+wallCollisionV :: Position -> Radius -> Bool 
+wallCollisionV ( _ , y) radius = topCollision || bottomCollision
+  where
+    topCollision    = y - radius <= -fromIntegral width / 2 
+    bottomCollision = y + radius >=  fromIntegral width / 2
+
+wallCollisionH :: Position -> Radius -> Bool 
+wallCollisionH ( x , _ ) radius = leftCollision || rightCollision
+  where
+    leftCollision = x - radius <= -fromIntegral width / 2
+    rightCollision = x + radius >= fromIntegral width / 2
+
+-- | Update the game by moving the ball and bouncing off walls.
+update :: Float -> Game -> Game
+update seconds = wallBounce . paddleBounce . moveBall seconds
+
+-- | Respond to key events.
+handleKeys :: Event -> Game -> Game
+-- For an 'r' keypress, reset the ball to the center.
+handleKeys (EventKey (Char 'r') _ _ _) game =
+  game { ballPos = ( 0, 0 )
+  , ballVel = (50, -50)
+  , playerx = 0
+  }
+
+handleKeys (EventKey (Char 'a') _ _ _) game =
+  if (pressKey game)
+  then
+    game { playerx = (playerx game - 10)
+    , pressKey = False
+    }
+  else
+    game { pressKey = True
+    }
+
+handleKeys (EventKey (Char 'd') _ _ _) game =
+  if pressKey game 
+  then
+    game { playerx = (playerx game + 10)
+    , pressKey = False
+    }
+  else
+     game { pressKey = True }
+-- Do nothing for all other events.
+handleKeys _ game = game
+
+main :: IO ()
+main = play window background fps initialState render handleKeys update
+
+
+
+{-
+drawBoxes :: Int -> Float -> Float -> [level]
+drawBoxes level x y = pictures
+  [ translate x y $ color (mapColor level) $ rectangleSolid 30 15]
+
+drawBoxesLine :: Int -> Int -> [boxes] -> [boxes]
+drawBoxesLine linha level lisBoxes = 
+  case linha of
+    0 -> lisBoxes
+    _ -> drawBoxesLine (linha-1) ( (boxes level x y) : lisBoxes)
+
+drawBoxesLevel :: Int -> Int -> [boxes] -> [boxes]
+drawBoxesLevel level lisBoxes = 
+  case level of
+    0 -> lisBoxes
+    _ -> drawBoxesLevel (level-1) ( (boxes level x y) : (drawBoxesLine 10 level lisBoxes) )
+-}
